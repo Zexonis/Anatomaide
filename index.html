@@ -344,6 +344,20 @@ body.pen #ink{pointer-events:auto}
 .dest.p1 .ic svg{stroke:var(--accent-ink)}
 .dest.p1 .tx b{font-size:1.1rem}
 .dest .fin{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--accent)}
+/* La carte Quiz et son bouton d'effacement. Le bouton est à GAUCHE, donc
+   l'étoile va à droite : la recommandation doit rester lisible d'un coup
+   d'œil, ce n'est pas au bouton secondaire de capter le regard. */
+.qzrow{display:flex;align-items:stretch;gap:9px;margin-bottom:9px}
+.qzrow .dest{flex:1 1 auto;margin-bottom:0}
+.wipe{flex:none;width:52px;border:1px solid var(--line);border-radius:14px;background:var(--panel);
+  color:var(--muted);display:grid;place-items:center;padding:0}
+.wipe:hover{color:var(--warn);border-color:rgba(242,177,52,.5)}
+.wipe svg{width:21px;height:21px;display:block}
+.etoile{display:inline-block;color:#F2B134;font-size:1rem;line-height:1;margin-bottom:3px}
+.fin .cpt2{display:block;font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--accent)}
+.dest .fin{display:flex;flex-direction:column;align-items:center;gap:1px}
+.horsvue{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.danger{background:var(--warn);color:#2A1C02}
 .acbas{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
 .acbas button{flex:1 1 auto;background:none;border:1px solid var(--line);border-radius:10px;
   padding:11px 12px;font-size:.78rem;font-weight:600;color:var(--muted);min-height:46px}
@@ -17587,6 +17601,14 @@ function selfCheck(){
   if(sansDoc.length > 2)
     p.push(sansDoc.length + ' repères ne sont sur aucun document repris : ' +
            sansDoc.map(id=>ficheDe(id).nom).join(', '));
+  /* Effacer est sans retour : le bouton ne doit exister que s'il mène à une
+     confirmation, et la recommandation doit rester visible à côté de lui. */
+  if(ecran === 'accueil' && acPage === 'menu'){
+    const w = document.querySelector('[data-go="effacer"]');
+    if(!w) p.push('accueil : pas de bouton d\'effacement');
+    if(w && !document.querySelector('.qzrow .etoile'))
+      p.push('accueil : le bouton d\'effacement est là mais l\'étoile du conseil a disparu');
+  }
   const lst = document.getElementById('list');
   if(lst && lst.innerHTML && !lst.querySelector('[data-act="mods"]'))
     p.push('liste : le réglage des modules est hors d\'atteinte depuis l\'écran principal');
@@ -18994,6 +19016,7 @@ const ICO = {
   jeu:'<path d="M12 3 2 9l10 6 10-6-10-6z"/><path d="M2 15l10 6 10-6"/>',
   oeil:'<path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3.2"/>',
   crayon:'<path d="M4 20h4L20 8l-4-4L4 16v4z"/><path d="M14 6l4 4"/>',
+  refaire:'<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>',
 };
 const svgIco = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
                     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
@@ -19013,7 +19036,8 @@ function renderAccueil(){
   el.innerHTML = '<div class="ac">' + (
       acPage === 'modules' ? pageModules() :
       acPage === 'ordre'   ? pageOrdre()   :
-      acPage === 'fin'     ? pageFin()     : pageMenu()) + '</div>';
+      acPage === 'fin'     ? pageFin()     :
+      acPage === 'effacer' ? pageEffacer()  : pageMenu()) + '</div>';
   el.scrollTop = 0;
 }
 function pageMenu(){
@@ -19023,9 +19047,15 @@ function pageMenu(){
     (DB.d.seen ? '' : '<p class="intro">Trois façons de travailler. Commence par le quiz : ' +
                       'il choisit quoi te demander, tu n\'as qu\'à répondre.</p>') +
     '<h2>Que veux-tu faire ?</h2>' +
-    dest('jeu', 'p1', ICO.jeu, 'Quiz',
-         'On éclaire une partie, tu la nommes. Quatre réponses, une bonne.',
-         sc.length ? acq + ' / ' + sc.length : '') +
+    '<div class="qzrow">' +
+      '<button class="wipe" data-go="effacer" title="Effacer ma progression"' +
+        ' aria-label="Effacer ma progression">' + svgIco(ICO.refaire) + '</button>' +
+      dest('jeu', 'p1', ICO.jeu, 'Quiz',
+           'On éclaire une partie, tu la nommes. Quatre réponses, une bonne.',
+           '<span class="etoile" aria-hidden="true">★</span>' +
+           '<span class="horsvue">Conseillé.</span>' +
+           (sc.length ? '<span class="cpt2">' + acq + ' / ' + sc.length + '</span>' : '')) +
+    '</div>' +
     dest('explorer', 'chantier', ICO.oeil, 'Explorer',
          'Les planches et les définitions, sans être interrogé.') +
     dest('dessin', 'chantier', ICO.crayon, 'Dessiner',
@@ -19083,6 +19113,24 @@ function pageOrdre(){
          'Au hasard parmi ce qui reste. Pour réviser quand tu connais déjà.') +
     dest('go-progressif', '', ICO.oeil, 'Progressif',
          'Dans l\'ordre du cours, du premier module au dernier. Pour apprendre.');
+}
+/* ------ effacer : sans retour, donc on le dit avant, avec les chiffres ------ */
+function pageEffacer(){
+  const sc = jeuScope(), acq = sc.filter(acquis).length;
+  const boites = Object.keys(DB.d.box || {}).length;
+  const rien = !acq && !boites;
+  return '<button class="retour" data-go="accueil">‹ Menu</button>' +
+    '<h1 style="margin:0 0 4px;font-size:1.15rem">Effacer ma progression ?</h1>' +
+    (rien
+      ? '<p class="intro">Il n\'y a encore rien à effacer : aucune partie acquise, ' +
+        'aucune notion suivie.</p>'
+      : '<p class="intro">Tu perdras <b>' + acq + ' partie' + (acq>1?'s':'') + ' acquise' +
+        (acq>1?'s':'') + '</b> et le suivi de <b>' + boites + ' notion' + (boites>1?'s':'') +
+        '</b> pour la révision du jour. Les modules que tu as choisis, eux, restent. ' +
+        'C\'est sans retour.</p>') +
+    (rien ? '' : '<button class="big danger" data-act="wipe-ok">Oui, tout effacer</button>') +
+    '<div style="height:8px"></div>' +
+    '<button class="ghost" data-go="accueil">' + (rien ? 'Revenir au menu' : 'Non, garder') + '</button>';
 }
 /* ------ fin de partie ------ */
 function pageFin(){
@@ -19235,6 +19283,7 @@ document.addEventListener('click', e=>{
       else if(d === 'go-melange')    jeuDemarrer('melange');
       else if(d === 'go-progressif') jeuDemarrer('progressif');
       else if(d === 'go-reprendre')  jeuDemarrer(DB.d.ordre || 'melange');
+      else if(d === 'effacer')    allerA('accueil', 'effacer');
       else if(d === 'chiffres'){ allerA('explorer');
         const v = document.getElementById('valid'); v.hidden = false;
         document.getElementById('btnMes').setAttribute('aria-pressed', true); }
@@ -19283,7 +19332,11 @@ document.addEventListener('click', e=>{
     else if(a==='draw-again') startDraw();
     else if(a==='tour'){ tourStart(); return; }
     else if(a==='jeu-suite'){ jeuSuivante(); return; }
-    else if(a==='remise'){ DB.d.maitrise = {}; DB.save(); renderAccueil(); return; }
+    else if(a==='remise'){ allerA('accueil', 'effacer'); return; }
+    else if(a==='wipe-ok'){
+      DB.d.maitrise = {}; DB.d.box = {}; DB.save();
+      jeu = null; quiz = null;
+      allerA('accueil', 'menu'); return; }
     renderStudy(); return;
   }
   const md = e.target.closest('[data-mod]');
