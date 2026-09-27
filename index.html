@@ -114,7 +114,14 @@ body.draw #btnMes{display:none}
      qu'on aille les chercher : le panneau prend la place qu'il lui faut, la
      planche garde de quoi montrer le repère éclairé. */
   body.jeu #panel{max-height:60vh}
-  body.jeu #study{padding:11px 12px;gap:9px} }
+  body.jeu #study{padding:11px 12px;gap:9px}
+  /* Une fiche ouverte allonge la carte : « Suivant » resterait sous la ligne de
+     flottaison. Il se colle au bas du panneau — l'ombre de 11 px, de la couleur
+     du panneau, bouche le rembourrage et l'espacement autour de lui pour que le
+     texte passe DERRIÈRE et non à côté. */
+  body.jeu #study .big[data-act="jeu-suite"]{
+    position:sticky;bottom:0;z-index:3;
+    box-shadow:0 0 0 11px var(--panel), 0 -13px 14px -8px rgba(0,0,0,.5)} }
 .plist{overflow-y:auto;padding:10px;flex:1 1 auto;min-height:0}
 .grp{margin-bottom:9px}
 .ghead{width:100%;display:flex;align-items:center;gap:7px;background:none;border:0;padding:5px 3px;
@@ -197,6 +204,10 @@ body.jeu #bar i{background:var(--ok)}
 .opts.jeu .opt[data-etat="faux"]{background:rgba(242,177,52,.15);border-color:var(--warn);color:var(--warn)}
 .opts.jeu .opt[data-etat="faux"] .let{background:var(--warn);color:#2A1C02}
 .opts.jeu .opt[data-etat="pale"]{opacity:.38}
+/* celle qu'on est en train de lire : un liseré, pour ne pas écraser le vert et
+   l'orange qui disent, eux, ce qui était juste */
+.opts.jeu .opt[data-lu]{opacity:1;box-shadow:inset 0 0 0 2px var(--accent)}
+body.jeu .fbloc{margin-top:2px}
 @media (max-width:900px){ .opts.jeu .opt{min-height:56px;font-size:.88rem} }
 .opt{text-align:left;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;
   padding:10px 12px;font-size:.87rem;font-weight:600;min-height:44px}
@@ -19106,7 +19117,7 @@ function jeuDemarrer(ordre){
   DB.d.ordre = ordre; DB.d.jeuMods = Array.from(jeuMods); DB.save();
   jeu = {scope, ordre, dernier:null, curseur:-1, poses:0, bons:0,
          debut:scope.filter(acquis).length,
-         cible:null, ch:[], phase:'q', choisi:null, minuteur:null};
+         cible:null, ch:[], phase:'q', choisi:null, fiche:null, minuteur:null};
   allerA('jeu');
   jeuSuivante();
 }
@@ -19131,7 +19142,7 @@ function jeuSuivante(){
     cible = cand[(Math.random()*cand.length)|0];
   }
   jeu.cible = cible; jeu.dernier = cible;
-  jeu.phase = 'q'; jeu.choisi = null;
+  jeu.phase = 'q'; jeu.choisi = null; jeu.fiche = null;
   jeu.ch = jeuChoix(cible);
   planche = planchePour(cible, planche);
   plateMode = 'jeu'; sel = null;
@@ -19199,10 +19210,15 @@ function jeuCarte(){
     h += '<div class="qlead">Question ' + (jeu.poses + 1) + '</div>' +
          '<div class="qmain">Quelle est la partie éclairée ?</div>';
   }
+  if(fb) h += '<p class="qhint">Touche une réponse pour lire ce que c\'est.</p>';
   h += '<div class="opts jeu">' + jeu.ch.map((id,i)=>
-        '<button class="opt" data-jeu="' + esc(id) + '"' + etat(id) + (fb ? ' disabled' : '') + '>' +
+        '<button class="opt" data-jeu="' + esc(id) + '"' + etat(id) +
+        (fb && jeu.fiche === id ? ' data-lu="1"' : '') + '>' +
         '<span class="let">' + L[i] + '</span>' + esc(ficheDe(id).nom) + '</button>').join('') + '</div>';
-  if(fb && !bon) h += '<button class="big" data-act="jeu-suite">Suivant</button>';
+  if(fb && jeu.fiche) h += ficheBloc(jeu.fiche);
+  /* Juste, on enchaîne tout seul — sauf si l'étudiant s'est mis à lire : il lui
+     faut alors un bouton, sinon la carte disparaîtrait sous ses yeux. */
+  if(fb && (!bon || jeu.fiche)) h += '<button class="big" data-act="jeu-suite">Suivant</button>';
   return h;
 }
 document.addEventListener('click', e=>{
@@ -19240,7 +19256,16 @@ document.addEventListener('click', e=>{
       DB.d.jeuMods = Array.from(jeuMods); DB.save(); renderAccueil(); return;
     }
     const rj = e.target.closest('[data-jeu]');
-    if(rj && !rj.disabled){ jeuRepondre(rj.dataset.jeu); return; }
+    if(rj && !rj.disabled && jeu){
+      if(jeu.phase === 'fb'){
+        /* la correction est faite : toucher une proposition, c'est la lire */
+        if(jeu.minuteur){ clearTimeout(jeu.minuteur); jeu.minuteur = null; }
+        const v = rj.dataset.jeu;
+        jeu.fiche = (jeu.fiche === v) ? null : v;
+        renderStudy();
+      } else jeuRepondre(rj.dataset.jeu);
+      return;
+    }
   }
   if(tb){ if(tb.dataset.tour === 'next' && tourI+1 < TOUR.length) tourGo(tourI+1);
           else tourFin(); return; }
@@ -19273,6 +19298,11 @@ document.addEventListener('click', e=>{
   /* correction : lire un repère manqué. Avant data-slot et data-nom, qui
      appartiennent à la phase de réponse. */
   const fc = e.target.closest('[data-fiche]');
+  if(fc && ecran === 'jeu' && jeu){
+    const v = fc.dataset.fiche;
+    jeu.fiche = (v && jeu.fiche !== v) ? v : null;
+    renderStudy(); return;
+  }
   if(fc && dr){
     const v = fc.dataset.fiche;
     dr.fiche = (v && dr.fiche !== v) ? v : null;
